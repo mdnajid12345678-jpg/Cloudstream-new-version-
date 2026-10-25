@@ -241,10 +241,11 @@ internal fun importCloudStreamProviders(
     var mediaCount = 0
     var sourceCount = 0
     providers.forEach { provider ->
-        provider.mainPage.take(20).forEach { page ->
+        provider.mainPage.take(20).forEach pageLoop@{ page ->
+            for (pageNumber in 1..20) {
             val home = runCatching {
-                kotlinx.coroutines.runBlocking { provider.getMainPage(1, MainPageRequest(page.name, page.data, page.horizontalImages)) }
-            }.getOrNull() ?: return@forEach
+                kotlinx.coroutines.runBlocking { provider.getMainPage(pageNumber, MainPageRequest(page.name, page.data, page.horizontalImages)) }
+            }.getOrNull() ?: return@pageLoop
             home.items.flatMap { it.list }.take(100).forEach itemLoop@{ item ->
                 try {
                     val loaded = kotlinx.coroutines.runBlocking { provider.load(item.url) } ?: return@itemLoop
@@ -306,6 +307,8 @@ internal fun importCloudStreamProviders(
                 } catch (_: Throwable) {
                     // Continue importing other items/providers when one provider item fails.
                 }
+            }
+            if (home.hasNext != true) break
             }
         }
     }
