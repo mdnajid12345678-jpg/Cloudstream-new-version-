@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import com.lagradost.cloudstream3.APIHolder
 import com.lagradost.cloudstream3.MainAPI
 import com.lagradost.cloudstream3.MainPageRequest
+import com.lagradost.cloudstream3.MovieLoadResponse
 import com.lagradost.cloudstream3.AnimeLoadResponse
 import com.lagradost.cloudstream3.TvSeriesLoadResponse
 import com.lagradost.cloudstream3.TvType
@@ -299,6 +300,7 @@ internal fun importCloudStreamProviders(
         description: String?,
         episodeName: String,
         episodeUrl: String,
+        pageUrl: String,
         season: Int?,
         episode: Int?,
         seasonName: String?
@@ -327,7 +329,7 @@ internal fun importCloudStreamProviders(
         val id = upsertMedia(body, episodeKey)
         if (id.isNotBlank()) {
             mediaCount++
-            saveLinks(provider, id, episodeUrl, episodeUrl)
+            saveLinks(provider, id, episodeUrl, pageUrl)
         }
     }
 
@@ -382,7 +384,7 @@ internal fun importCloudStreamProviders(
                                         provider, parentId, parentKey, loaded.name, year,
                                         loaded.posterUrl, loaded.plot,
                                         episode.name ?: "Episode ${episode.episode ?: ""}",
-                                        episode.data, episode.season, episode.episode,
+                                        episode.data, loaded.url, episode.season, episode.episode,
                                         episode.season?.let { seasonNames[it]?.name }
                                     )
                                 }
@@ -394,11 +396,12 @@ internal fun importCloudStreamProviders(
                                         provider, parentId, parentKey, loaded.name, year,
                                         loaded.posterUrl, loaded.plot,
                                         episode.name ?: "Episode ${episode.episode ?: ""}",
-                                        episode.data, episode.season, episode.episode,
+                                        episode.data, loaded.url, episode.season, episode.episode,
                                         seasonNames[episode.season]?.name
                                     )
                                 }
                             }
+                            is MovieLoadResponse -> saveLinks(provider, parentId, loaded.dataUrl, loaded.url)
                             else -> saveLinks(provider, parentId, loaded.url, loaded.url)
                         }
                     } catch (_: Throwable) {
