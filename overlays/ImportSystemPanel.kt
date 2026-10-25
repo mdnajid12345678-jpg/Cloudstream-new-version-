@@ -55,7 +55,6 @@ internal fun ImportSystemPanel() {
     var busy by remember { mutableStateOf(false) }
     var createAccount by remember { mutableStateOf(false) }
     var accessToken by remember { mutableStateOf("") }
-    var refreshToken by remember { mutableStateOf(prefs.getString("refresh_token", "") ?: "") }
     var userId by remember { mutableStateOf("") }
     var importedCount by remember { mutableStateOf(0) }
     var sourceCount by remember { mutableStateOf(0) }
@@ -111,9 +110,9 @@ internal fun ImportSystemPanel() {
                                 result.onSuccess { (token, uid, newRefreshToken) ->
                                     accessToken = token
                                     userId = uid
-                                    refreshToken = newRefreshToken
                                     status = "Signed in. Database access verified."
-                                    prefs.edit().putString("project_url", projectUrl.trim().trimEnd('/')).putString("anon_key", anonKey.trim()).putString("email", email.trim()).putString("refresh_token", newRefreshToken).apply()
+                                    prefs.edit().putString("project_url", projectUrl.trim().trimEnd('/')).putString("anon_key", anonKey.trim()).putString("email", email.trim()).apply()
+                                    ImportTokenVault.save(context, newRefreshToken)
                                     password = ""
                                 }.onFailure { status = "Connection failed: ${it.message ?: "unknown error"}" }
                             }
