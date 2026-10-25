@@ -6,6 +6,10 @@ target = root / "app/src/main/java/com/lagradost/cloudstream3/ui/settings/Import
 target.parent.mkdir(parents=True, exist_ok=True)
 target.write_text(overlay.read_text())
 
+worker_overlay = Path("overlays/CloudStreamImportWorker.kt")
+worker_target = root / "app/src/main/java/com/lagradost/cloudstream3/ui/settings/CloudStreamImportWorker.kt"
+worker_target.write_text(worker_overlay.read_text())
+
 screen = root / "app/src/main/java/com/lagradost/cloudstream3/ui/settings/SettingsFragmentScreen.kt"
 text = screen.read_text()
 if "ImportSystemPanel()" not in text:
