@@ -10,6 +10,10 @@ worker_overlay = Path("overlays/CloudStreamImportWorker.kt")
 worker_target = root / "app/src/main/java/com/lagradost/cloudstream3/ui/settings/CloudStreamImportWorker.kt"
 worker_target.write_text(worker_overlay.read_text())
 
+vault_overlay = Path("overlays/ImportTokenVault.kt")
+vault_target = root / "app/src/main/java/com/lagradost/cloudstream3/ui/settings/ImportTokenVault.kt"
+vault_target.write_text(vault_overlay.read_text())
+
 screen = root / "app/src/main/java/com/lagradost/cloudstream3/ui/settings/SettingsFragmentScreen.kt"
 text = screen.read_text()
 if "ImportSystemPanel()" not in text:
