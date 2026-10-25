@@ -307,6 +307,23 @@ internal fun importCloudStreamProviders(
     ) {
         if (episodeUrl.isBlank()) return
         val normalizedEpisode = normalizeImportTitle(episodeName)
+        val seasonId = if (season != null) {
+            val seasonKey = "$parentKey|season:$season"
+            val seasonBody = JSONObject()
+                .put("owner_id", ownerId)
+                .put("canonical_key", seasonKey)
+                .put("title", "$seriesTitle - ${seasonName ?: "Season $season"}")
+                .put("normalized_title", normalizeImportTitle("$seriesTitle ${seasonName ?: "Season $season"}"))
+                .put("content_type", "season")
+                .put("release_year", year ?: JSONObject.NULL)
+                .put("poster_url", posterUrl ?: JSONObject.NULL)
+                .put("description", description ?: JSONObject.NULL)
+                .put("parent_media_id", parentId)
+                .put("season_number", season)
+                .put("provider_name", provider.name)
+                .put("metadata", JSONObject().put("series_title", seriesTitle).put("season_name", seasonName ?: JSONObject.NULL))
+            upsertMedia(seasonBody, seasonKey).ifBlank { parentId }
+        } else parentId
         val episodeKey = "$parentKey|season:${season ?: 0}|episode:${episode ?: 0}|$normalizedEpisode"
         val body = JSONObject()
             .put("owner_id", ownerId)
@@ -317,7 +334,7 @@ internal fun importCloudStreamProviders(
             .put("release_year", year ?: JSONObject.NULL)
             .put("poster_url", posterUrl ?: JSONObject.NULL)
             .put("description", description ?: JSONObject.NULL)
-            .put("parent_media_id", parentId)
+            .put("parent_media_id", seasonId)
             .put("season_number", season ?: JSONObject.NULL)
             .put("episode_number", episode ?: JSONObject.NULL)
             .put("episode_name", episodeName)
