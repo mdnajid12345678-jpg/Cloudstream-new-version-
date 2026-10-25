@@ -55,6 +55,7 @@ internal fun ImportSystemPanel() {
     var busy by remember { mutableStateOf(false) }
     var createAccount by remember { mutableStateOf(false) }
     var accessToken by remember { mutableStateOf("") }
+    var refreshToken by remember { mutableStateOf(prefs.getString("refresh_token", "") ?: "") }
     var userId by remember { mutableStateOf("") }
     var importedCount by remember { mutableStateOf(0) }
     var sourceCount by remember { mutableStateOf(0) }
@@ -103,15 +104,16 @@ internal fun ImportSystemPanel() {
                                             error("Supabase did not return a session. Check credentials or email confirmation settings.")
                                         }
                                         importHttp("GET", "$base/rest/v1/media_items?select=id&limit=1", anonKey.trim(), token, null)
-                                        Triple(token, uid, "Signed in. Database access verified.")
+                                        Triple(token, uid, response.optString("refresh_token"))
                                     }
                                 }
                                 busy = false
-                                result.onSuccess { (token, uid, message) ->
+                                result.onSuccess { (token, uid, newRefreshToken) ->
                                     accessToken = token
                                     userId = uid
-                                    status = message
-                                    prefs.edit().putString("project_url", projectUrl.trim().trimEnd('/')).putString("anon_key", anonKey.trim()).putString("email", email.trim()).apply()
+                                    refreshToken = newRefreshToken
+                                    status = "Signed in. Database access verified."
+                                    prefs.edit().putString("project_url", projectUrl.trim().trimEnd('/')).putString("anon_key", anonKey.trim()).putString("email", email.trim()).putString("refresh_token", newRefreshToken).apply()
                                     password = ""
                                 }.onFailure { status = "Connection failed: ${it.message ?: "unknown error"}" }
                             }
@@ -173,7 +175,8 @@ internal fun ImportSystemPanel() {
                             result.onSuccess { (media, sources) ->
                                 importedCount = media
                                 sourceCount = sources
-                                status = "Import finished. Added/updated $media media items and saved $sources unique stream links."
+                                status = "Import finished. Added/updated $media media items and saved $sources unique stream links. Daily sync is scheduled."
+                                CloudStreamImportWorker.enqueue(context)
                             }.onFailure { status = "Import stopped: ${it.message ?: "unknown error"}" }
                         }
                     }) { Text(if (busy) "Working…" else "Start Import") }
@@ -185,7 +188,7 @@ internal fun ImportSystemPanel() {
     }
 }
 
-private fun importHttp(method: String, url: String, anonKey: String, token: String?, body: JSONObject?): JSONObject {
+internal fun importHttp(method: String, url: String, anonKey: String, token: String?, body: JSONObject?): JSONObject {
     val connection = URL(url).openConnection() as HttpURLConnection
     try {
         connection.requestMethod = method
@@ -211,14 +214,14 @@ private fun importHttp(method: String, url: String, anonKey: String, token: Stri
     }
 }
 
-private fun normalizeImportTitle(value: String): String =
+internal fun normalizeImportTitle(value: String): String =
     Normalizer.normalize(value.lowercase(Locale.ROOT), Normalizer.Form.NFD)
         .replace(Regex("\\p{M}+"), "")
         .replace(Regex("[^a-z0-9]+"), " ")
         .trim()
         .replace(Regex("\\s+"), " ")
 
-private fun mapImportType(type: TvType): String = when (type) {
+internal fun mapImportType(type: TvType): String = when (type) {
     TvType.Anime, TvType.AnimeMovie -> "anime"
     TvType.Movie -> "movie"
     TvType.TvSeries, TvType.Cartoon, TvType.AsianDrama -> "series"
@@ -226,7 +229,7 @@ private fun mapImportType(type: TvType): String = when (type) {
     else -> "other"
 }
 
-private fun importCloudStreamProviders(
+internal fun importCloudStreamProviders(
     providers: List<MainAPI>,
     base: String,
     anonKey: String,
