@@ -22,7 +22,7 @@ internal class CloudStreamImportWorker(
         val prefs = applicationContext.getSharedPreferences("cloudstream_import_system", Context.MODE_PRIVATE)
         val base = prefs.getString("project_url", "").orEmpty().trimEnd('/')
         val key = prefs.getString("anon_key", "").orEmpty()
-        val refreshToken = prefs.getString("refresh_token", "").orEmpty()
+        val refreshToken = ImportTokenVault.read(applicationContext)
         val names = prefs.getStringSet("providers", emptySet()).orEmpty()
         if (base.isBlank() || key.isBlank() || refreshToken.isBlank() || names.isEmpty()) return@withContext Result.failure()
         try {
@@ -37,7 +37,7 @@ internal class CloudStreamImportWorker(
             val newRefresh = auth.optString("refresh_token", refreshToken)
             val userId = auth.optJSONObject("user")?.optString("id").orEmpty()
             if (token.isBlank() || userId.isBlank()) return@withContext Result.retry()
-            prefs.edit().putString("refresh_token", newRefresh).apply()
+            ImportTokenVault.save(applicationContext, newRefresh)
             val providers = APIHolder.apis.filter { it.name in names }
             if (providers.isEmpty()) return@withContext Result.retry()
             val from = prefs.getInt("from_year", 2025)
