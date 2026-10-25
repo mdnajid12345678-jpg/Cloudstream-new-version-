@@ -247,11 +247,11 @@ internal fun importCloudStreamProviders(
     fun upsertMedia(body: JSONObject, canonicalKey: String): String {
         val response = importHttp(
             "POST",
-            "$base/rest/v1/media_items?on_conflict=canonical_key",
+            "$base/rest/v1/media_items?on_conflict=owner_id,canonical_key",
             anonKey, token, body
         )
         return response.optJSONArray("data")?.optJSONObject(0)?.optString("id").orEmpty().ifBlank {
-            val query = "$base/rest/v1/media_items?select=id&canonical_key=eq.${java.net.URLEncoder.encode(canonicalKey, "UTF-8")}"
+            val query = "$base/rest/v1/media_items?select=id&owner_id=eq.${java.net.URLEncoder.encode(ownerId, "UTF-8")}&canonical_key=eq.${java.net.URLEncoder.encode(canonicalKey, "UTF-8")}"
             importHttp("GET", query, anonKey, token, null)
                 .optJSONArray("data")?.optJSONObject(0)?.optString("id").orEmpty()
         }
