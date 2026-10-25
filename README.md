@@ -21,7 +21,7 @@ This repository builds a customized CloudStream debug APK with an Import System 
 
 ## Important limitations
 - The importer can only index content returned by providers installed/enabled in CloudStream. Provider failures are skipped so the rest can continue.
-- Provider homepage pagination is capped: up to 20 homepage categories and 100 results per category per provider per run.
+- Provider homepage pagination is capped: up to 20 homepage categories, 20 pages per category (when the provider supports pagination), and 100 results per page per provider per run.
 - Some provider link callbacks return extractor/landing URLs rather than a permanent raw media URL. URLs are stored as returned by CloudStream; expiring links may later stop working.
 - Android WorkManager daily execution is best-effort and may be delayed by battery optimization, network availability or the OS.
 - Refresh tokens are stored in local app preferences for scheduled refresh. Use this only on a trusted device; remove app data to clear local access.
