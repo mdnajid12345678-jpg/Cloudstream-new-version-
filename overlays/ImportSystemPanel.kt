@@ -51,8 +51,8 @@ internal fun ImportSystemPanel() {
     var anonKey by remember { mutableStateOf(prefs.getString("anon_key", "") ?: "") }
     var email by remember { mutableStateOf(prefs.getString("email", "") ?: "") }
     var password by remember { mutableStateOf("") }
-    var fromYear by remember { mutableStateOf("2025") }
-    var toYear by remember { mutableStateOf("2026") }
+    var fromYear by remember { mutableStateOf(prefs.getInt("from_year", 2025).toString()) }
+    var toYear by remember { mutableStateOf(prefs.getInt("to_year", 2026).toString()) }
     var status by remember { mutableStateOf("Sign in to your Supabase account to import.") }
     var busy by remember { mutableStateOf(false) }
     var createAccount by remember { mutableStateOf(false) }
@@ -63,7 +63,7 @@ internal fun ImportSystemPanel() {
     val providers = remember { APIHolder.apis.map { it }.distinctBy { it.name }.sortedBy { it.name } }
     val selected = remember { mutableStateOf(prefs.getStringSet("providers", emptySet())?.toSet() ?: emptySet()) }
     val categories = listOf("anime", "movie", "series", "ova", "ona", "special", "other")
-    val selectedCategories = remember { mutableStateOf(setOf("anime", "movie", "series")) }
+    val selectedCategories = remember { mutableStateOf(prefs.getStringSet("categories", setOf("anime", "movie", "series"))?.toSet() ?: setOf("anime", "movie", "series")) }
 
     Button(onClick = { open = true }, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
         Text("Import System · Supabase")
