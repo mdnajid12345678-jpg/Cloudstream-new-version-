@@ -383,7 +383,7 @@ internal fun importCloudStreamProviders(
                                         loaded.posterUrl, loaded.plot,
                                         episode.name ?: "Episode ${episode.episode ?: ""}",
                                         episode.data, episode.season, episode.episode,
-                                        seasonNames[episode.season]?.name
+                                        episode.season?.let { seasonNames[it]?.name }
                                     )
                                 }
                             }
