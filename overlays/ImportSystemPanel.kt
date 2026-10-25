@@ -127,7 +127,7 @@ internal fun ImportSystemPanel() {
                                     prefs.edit()
                                         .putString("project_url", projectUrl.trim().trimEnd('/'))
                                         .putString("anon_key", anonKey.trim())
-                                        .putStringSet("providers", selected.value)
+                                        .putStringSet("providers", selected.value.toMutableSet())
                                         .apply()
                                 }
                             }
