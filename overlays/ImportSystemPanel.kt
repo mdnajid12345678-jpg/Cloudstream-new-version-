@@ -193,6 +193,8 @@ private fun importHttp(method: String, url: String, anonKey: String, token: Stri
         connection.readTimeout = 30000
         connection.setRequestProperty("apikey", anonKey)
         connection.setRequestProperty("Accept", "application/json")
+        if (method == "POST" && url.contains("/media_items")) connection.setRequestProperty("Prefer", "resolution=merge-duplicates,return=representation")
+        if (method == "POST" && url.contains("/media_sources")) connection.setRequestProperty("Prefer", "resolution=ignore-duplicates,return=minimal")
         if (!token.isNullOrBlank()) connection.setRequestProperty("Authorization", "Bearer $token")
         if (body != null) {
             connection.doOutput = true
@@ -203,7 +205,7 @@ private fun importHttp(method: String, url: String, anonKey: String, token: Stri
         val stream = if (code in 200..299) connection.inputStream else connection.errorStream
         val response = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
         if (code !in 200..299) error("HTTP $code: ${response.take(250)}")
-        return if (response.isBlank()) JSONObject() else JSONObject(response)
+        return if (response.isBlank()) JSONObject() else if (response.trimStart().startsWith("[")) JSONObject().put("data", JSONArray(response)) else JSONObject(response)
     } finally {
         connection.disconnect()
     }
@@ -266,10 +268,10 @@ private fun importCloudStreamProviders(
                         "$base/rest/v1/media_items?on_conflict=canonical_key",
                         anonKey, token, mediaBody
                     )
-                    val mediaId = mediaResponse.optString("id").ifBlank {
+                    val mediaId = mediaResponse.optJSONArray("data")?.optJSONObject(0)?.optString("id").orEmpty().ifBlank {
                         val query = "$base/rest/v1/media_items?select=id&canonical_key=eq.${java.net.URLEncoder.encode(canonicalKey, "UTF-8")}"
                         val rows = importHttp("GET", query, anonKey, token, null)
-                        rows.optString("id")
+                        rows.optJSONArray("data")?.optJSONObject(0)?.optString("id").orEmpty()
                     }
                     if (mediaId.isBlank()) return@itemLoop
                     mediaCount++
