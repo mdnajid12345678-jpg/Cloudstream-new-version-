@@ -1,0 +1,46 @@
+name: CloudStream Android Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'overlays/**'
+      - 'scripts/**'
+      - '.github/workflows/android-build.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout customization
+        uses: actions/checkout@v4
+      - name: Checkout CloudStream source matching supplied archive
+        uses: actions/checkout@v4
+        with:
+          repository: recloudstream/cloudstream
+          ref: a7ac454af8fbd64574c96847a936905855911720
+          path: source
+      - name: Apply customization
+        run: python3 scripts/apply_overlay.py
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+      - name: Build debug APK
+        working-directory: source
+        run: ./gradlew :app:assemblePrereleaseDebug --no-daemon
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cloudstream-import-system-apk
+          path: source/app/build/outputs/apk/**/*.apk
+          if-no-files-found: warn
+          retention-days: 14
