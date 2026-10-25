@@ -27,6 +27,8 @@ import androidx.compose.ui.unit.dp
 import com.lagradost.cloudstream3.APIHolder
 import com.lagradost.cloudstream3.MainAPI
 import com.lagradost.cloudstream3.MainPageRequest
+import com.lagradost.cloudstream3.AnimeLoadResponse
+import com.lagradost.cloudstream3.TvSeriesLoadResponse
 import com.lagradost.cloudstream3.TvType
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import kotlinx.coroutines.Dispatchers
@@ -159,7 +161,7 @@ internal fun ImportSystemPanel() {
                         importedCount = 0
                         sourceCount = 0
                         status = "Import started…"
-                        prefs.edit().putStringSet("providers", selected.value.toMutableSet()).apply()
+                        prefs.edit().putStringSet("providers", selected.value.toMutableSet()).putInt("from_year", start).putInt("to_year", end).putStringSet("categories", selectedCategories.value.toMutableSet()).apply()
                         scope.launch {
                             val result = withContext(Dispatchers.IO) {
                                 runCatching {
@@ -240,77 +242,211 @@ internal fun importCloudStreamProviders(
 ): Pair<Int, Int> {
     var mediaCount = 0
     var sourceCount = 0
+
+    fun upsertMedia(body: JSONObject, canonicalKey: String): String {
+        val response = importHttp(
+            "POST",
+            "$base/rest/v1/media_items?on_conflict=canonical_key",
+            anonKey, token, body
+        )
+        return response.optJSONArray("data")?.optJSONObject(0)?.optString("id").orEmpty().ifBlank {
+            val query = "$base/rest/v1/media_items?select=id&canonical_key=eq.${java.net.URLEncoder.encode(canonicalKey, "UTF-8")}"
+            importHttp("GET", query, anonKey, token, null)
+                .optJSONArray("data")?.optJSONObject(0)?.optString("id").orEmpty()
+        }
+    }
+
+    fun saveLinks(provider: MainAPI, mediaId: String, providerItemId: String, pageUrl: String) {
+        val links = mutableListOf<ExtractorLink>()
+        runCatching {
+            kotlinx.coroutines.runBlocking {
+                provider.loadLinks(providerItemId, false, { }, { link -> links.add(link) })
+            }
+        }
+        links.distinctBy { it.url }.forEach { link ->
+            if (link.url.isBlank()) return@forEach
+            val body = JSONObject()
+                .put("media_item_id", mediaId)
+                .put("provider_name", provider.name)
+                .put("provider_item_id", providerItemId)
+                .put("page_url", pageUrl)
+                .put("direct_url", link.url)
+                .put("server_name", link.name.ifBlank { link.source })
+                .put("language", JSONObject.NULL)
+                .put("quality", link.quality.toString())
+                .put("metadata", JSONObject()
+                    .put("referer", link.referer)
+                    .put("stream_type", link.type.name))
+            runCatching {
+                importHttp(
+                    "POST",
+                    "$base/rest/v1/media_sources?on_conflict=media_item_id,direct_url",
+                    anonKey, token, body
+                )
+                sourceCount++
+            }
+        }
+    }
+
+
+    fun saveEpisode(
+        provider: MainAPI,
+        parentId: String,
+        parentKey: String,
+        seriesTitle: String,
+        year: Int?,
+        posterUrl: String?,
+        description: String?,
+        episodeName: String,
+        episodeUrl: String,
+        season: Int?,
+        episode: Int?,
+        seasonName: String?
+    ) {
+        if (episodeUrl.isBlank()) return
+        val normalizedEpisode = normalizeImportTitle(episodeName)
+        val episodeKey = "$parentKey|season:${season ?: 0}|episode:${episode ?: 0}|$normalizedEpisode"
+        val body = JSONObject()
+            .put("owner_id", ownerId)
+            .put("canonical_key", episodeKey)
+            .put("title", "$seriesTitle - $episodeName")
+            .put("normalized_title", normalizeImportTitle("$seriesTitle $episodeName"))
+            .put("content_type", "episode")
+            .put("release_year", year ?: JSONObject.NULL)
+            .put("poster_url", posterUrl ?: JSONObject.NULL)
+            .put("description", description ?: JSONObject.NULL)
+            .put("parent_media_id", parentId)
+            .put("season_number", season ?: JSONObject.NULL)
+            .put("episode_number", episode ?: JSONObject.NULL)
+            .put("episode_name", episodeName)
+            .put("provider_name", provider.name)
+            .put("metadata", JSONObject()
+                .put("series_title", seriesTitle)
+                .put("season_name", seasonName ?: JSONObject.NULL)
+                .put("episode_url", episodeUrl))
+        val id = upsertMedia(body, episodeKey)
+        if (id.isNotBlank()) {
+            mediaCount++
+            saveLinks(provider, id, episodeUrl, episodeUrl)
+        }
+    }
+
     providers.forEach { provider ->
         provider.mainPage.take(20).forEach pageLoop@{ page ->
             for (pageNumber in 1..20) {
-            val home = runCatching {
-                kotlinx.coroutines.runBlocking { provider.getMainPage(pageNumber, MainPageRequest(page.name, page.data, page.horizontalImages)) }
-            }.getOrNull() ?: return@pageLoop
-            home.items.flatMap { it.list }.take(100).forEach itemLoop@{ item ->
-                try {
-                    val loaded = kotlinx.coroutines.runBlocking { provider.load(item.url) } ?: return@itemLoop
-                    val year = loaded.year
-                    if (year != null && (year < fromYear || year > toYear)) return@itemLoop
-                    val type = mapImportType(loaded.type)
-                    if (type !in categories) return@itemLoop
-                    val normalized = normalizeImportTitle(loaded.name)
-                    if (normalized.isBlank()) return@itemLoop
-                    val canonicalKey = "$normalized|$type|${year ?: 0}"
-                    val mediaBody = JSONObject()
-                        .put("owner_id", ownerId)
-                        .put("canonical_key", canonicalKey)
-                        .put("title", loaded.name)
-                        .put("normalized_title", normalized)
-                        .put("content_type", type)
-                        .put("release_year", year ?: JSONObject.NULL)
-                        .put("poster_url", loaded.posterUrl ?: JSONObject.NULL)
-                        .put("description", loaded.plot ?: JSONObject.NULL)
-                        .put("metadata", JSONObject().put("provider", provider.name).put("provider_item_url", loaded.url))
-                    val mediaResponse = importHttp(
-                        "POST",
-                        "$base/rest/v1/media_items?on_conflict=canonical_key",
-                        anonKey, token, mediaBody
-                    )
-                    val mediaId = mediaResponse.optJSONArray("data")?.optJSONObject(0)?.optString("id").orEmpty().ifBlank {
-                        val query = "$base/rest/v1/media_items?select=id&canonical_key=eq.${java.net.URLEncoder.encode(canonicalKey, "UTF-8")}"
-                        val rows = importHttp("GET", query, anonKey, token, null)
-                        rows.optJSONArray("data")?.optJSONObject(0)?.optString("id").orEmpty()
+                val home = runCatching {
+                    kotlinx.coroutines.runBlocking {
+                        provider.getMainPage(
+                            pageNumber,
+                            MainPageRequest(page.name, page.data, page.horizontalImages)
+                        )
                     }
-                    if (mediaId.isBlank()) return@itemLoop
-                    mediaCount++
-                    val links = mutableListOf<ExtractorLink>()
-                    runCatching {
-                        kotlinx.coroutines.runBlocking {
-                            provider.loadLinks(loaded.url, false, { }, { link -> links.add(link) })
-                        }
-                    }
-                    links.distinctBy { it.url }.forEach { link ->
-                        if (link.url.isBlank()) return@forEach
-                        val sourceBody = JSONObject()
-                            .put("media_item_id", mediaId)
+                }.getOrNull() ?: return@pageLoop
+
+                home.items.flatMap { it.list }.take(100).forEach itemLoop@{ item ->
+                    try {
+                        val loaded = kotlinx.coroutines.runBlocking { provider.load(item.url) }
+                            ?: return@itemLoop
+                        val year = loaded.year
+                        if (year != null && (year < fromYear || year > toYear)) return@itemLoop
+                        val type = mapImportType(loaded.type)
+                        if (type !in categories) return@itemLoop
+
+                        val normalized = normalizeImportTitle(loaded.name)
+                        if (normalized.isBlank()) return@itemLoop
+                        val parentKey = "$normalized|$type|${year ?: 0}"
+                        val parentBody = JSONObject()
+                            .put("owner_id", ownerId)
+                            .put("canonical_key", parentKey)
+                            .put("title", loaded.name)
+                            .put("normalized_title", normalized)
+                            .put("content_type", type)
+                            .put("release_year", year ?: JSONObject.NULL)
+                            .put("poster_url", loaded.posterUrl ?: JSONObject.NULL)
+                            .put("description", loaded.plot ?: JSONObject.NULL)
                             .put("provider_name", provider.name)
-                            .put("provider_item_id", item.url)
-                            .put("page_url", loaded.url)
-                            .put("direct_url", link.url)
-                            .put("server_name", link.name.ifBlank { link.source })
-                            .put("quality", link.quality.toString())
-                            .put("metadata", JSONObject().put("referer", link.referer).put("stream_type", link.type.name))
-                        runCatching {
-                            importHttp(
-                                "POST",
-                                "$base/rest/v1/media_sources?on_conflict=media_item_id,direct_url",
-                                anonKey, token, sourceBody
-                            )
-                            sourceCount++
+                            .put("metadata", JSONObject()
+                                .put("provider", provider.name)
+                                .put("provider_item_url", loaded.url)
+                                .put("tv_type", loaded.type.name))
+
+                        val parentId = upsertMedia(parentBody, parentKey)
+                        if (parentId.isBlank()) return@itemLoop
+                        mediaCount++
+
+                        when (loaded) {
+                            is TvSeriesLoadResponse -> {
+                                val seasonNames = loaded.seasonNames.orEmpty().associateBy { it.season }
+                                loaded.episodes.forEach { episode ->
+                                    saveEpisode(
+                                        provider, parentId, parentKey, loaded.name, year,
+                                        loaded.posterUrl, loaded.plot,
+                                        episode.name ?: "Episode ${episode.episode ?: ""}",
+                                        episode.data, episode.season, episode.episode,
+                                        seasonNames[episode.season]?.name
+                                    )
+                                }
+                            }
+                            is AnimeLoadResponse -> {
+                                val seasonNames = loaded.seasonNames.orEmpty().associateBy { it.season }
+                                loaded.episodes.values.flatten().forEach { episode ->
+                                    saveEpisode(
+                                        provider, parentId, parentKey, loaded.name, year,
+                                        loaded.posterUrl, loaded.plot,
+                                        episode.name ?: "Episode ${episode.episode ?: ""}",
+                                        episode.data, episode.season, episode.episode,
+                                        seasonNames[episode.season]?.name
+                                    )
+                                }
+                            }
+                            else -> saveLinks(provider, parentId, loaded.url, loaded.url)
                         }
+                    } catch (_: Throwable) {
+                        // Keep scanning other titles if a provider has one broken page.
                     }
-                } catch (_: Throwable) {
-                    // Continue importing other items/providers when one provider item fails.
                 }
-            }
-            if (home.hasNext != true) break
+                if (home.hasNext != true) break
             }
         }
     }
     return mediaCount to sourceCount
+}
+
+private fun saveEpisode(
+    provider: MainAPI,
+    parentId: String,
+    parentKey: String,
+    seriesTitle: String,
+    year: Int?,
+    posterUrl: String?,
+    description: String?,
+    episodeName: String,
+    episodeUrl: String,
+    season: Int?,
+    episode: Int?,
+    seasonName: String?
+) {
+    if (episodeUrl.isBlank()) return
+    val normalizedEpisode = normalizeImportTitle(episodeName)
+    val episodeKey = "$parentKey|season:${season ?: 0}|episode:${episode ?: 0}|$normalizedEpisode"
+    val episodeBody = JSONObject()
+        .put("owner_id", importOwnerIdForEpisode)
+        .put("canonical_key", episodeKey)
+        .put("title", "$seriesTitle - $episodeName")
+        .put("normalized_title", normalizeImportTitle("$seriesTitle $episodeName"))
+        .put("content_type", "episode")
+        .put("release_year", year ?: JSONObject.NULL)
+        .put("poster_url", posterUrl ?: JSONObject.NULL)
+        .put("description", description ?: JSONObject.NULL)
+        .put("parent_media_id", parentId)
+        .put("season_number", season ?: JSONObject.NULL)
+        .put("episode_number", episode ?: JSONObject.NULL)
+        .put("episode_name", episodeName)
+        .put("provider_name", provider.name)
+        .put("metadata", JSONObject()
+            .put("series_title", seriesTitle)
+            .put("season_name", seasonName ?: JSONObject.NULL)
+            .put("episode_url", episodeUrl))
+    val id = upsertMediaForEpisode(episodeBody, episodeKey)
+    if (id.isNotBlank()) saveEpisodeLinks(provider, id, episodeUrl)
 }
